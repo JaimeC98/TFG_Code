@@ -1,0 +1,316 @@
+package owl.upm.tfg;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.StringWriter;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.text.DateFormat;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Locale;
+
+import javax.xml.transform.OutputKeys;
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerException;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.dom.DOMSource;
+import javax.xml.transform.stream.StreamResult;
+
+import org.apache.jena.graph.Node;
+import org.apache.jena.ontology.*;
+import org.apache.jena.query.*;
+import org.apache.jena.rdf.model.*;
+import org.apache.jena.riot.RDFDataMgr;
+import org.apache.jena.util.iterator.ExtendedIterator;
+import org.topbraid.spin.util.JenaUtil;
+
+public class Pruebas {
+	
+	public static void genAn(String classN [], int noInd, String uri, OntModel oM) {
+		String aName = "Anomaly_";
+		SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+		String fechaHoy = dateFormat.format(new Date());
+	    OntClass clAnom1 = oM.getOntClass(uri + "Firewall_Anomaly");
+	    OntClass clAnom2 = oM.getOntClass(uri + "Bluetooth_Sensor_Anomaly");
+	    OntClass clAnom3 = oM.getOntClass(uri + "WiFi_Sensor_Anomaly");
+	    
+	    OntProperty date = oM.getOntProperty(uri + "date");
+	    OntClass anCl [] = {clAnom1, clAnom2, clAnom3};
+	   
+	    for(int i = 0; i < anCl.length; i++) {
+	    	OntClass auxCl = anCl[i];
+	    	for(int j = 0; j < noInd; j++) {
+	    		Individual an = oM.createIndividual(uri + aName + classN[i] + j, auxCl);
+	    		an.addProperty(date, oM.createTypedLiteral(fechaHoy));
+	    	}
+    		instOf(auxCl.getURI(), "Detected_Anomaly", oM);
+	    }
+	}
+
+	public static void genTh(String prob [], String impa [], String classN [], int noInd, String uri, String uri2, OntModel oM) {
+		String aName = "Anomaly_";
+		String tName = "Threat_";
+		OntClass clTh1 = oM.getOntClass(uri + "DeliberatedUnauthorizedAccess");
+	    OntClass clTh2 = oM.getOntClass(uri + "DenialOfService");
+	    OntClass clTh3 = oM.getOntClass(uri + "ConfigurationError");
+	    OntProperty generate = oM.getOntProperty(uri2 + "isGeneratedBy");
+	    OntClass thCl [] = {clTh1, clTh2, clTh3};
+	   
+	    for(int i = 0; i < thCl.length; i++) {
+	    	OntClass auxCl = thCl[i];
+	    	for(int j = 0; j < noInd; j++) {
+	    		Individual an = oM.createIndividual(uri + tName + classN[i] + j, auxCl);
+	    		an.addProperty(generate, oM.getIndividual(uri + aName + classN[i] + j));
+	    	}
+    		genPaI(prob[i], impa[i], auxCl.getURI(), oM);
+    		instOf(auxCl.getURI(), "Threat", oM);
+	    }
+	}
+	
+	public static void genRs(OntModel oM, String uri, String prob [], String impa [], HashMap<String, String> risk) {
+		String c2 = "PREFIX Ontologia_TFG: <http://www.semanticweb.org/tfg/Ontologia_TFG#>\n"
+				+ "PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>\n" + "\n" +
+				 "SELECT ?s \n" +
+		            "WHERE\n" +
+		            "  { ?s a Ontologia_TFG:Threat ." +
+		            "  }\n";
+		
+		OntProperty risVal = oM.getOntProperty(uri + "risk_value");
+		List<QuerySolution> var = new ArrayList<QuerySolution>();
+		List<String> clases = new ArrayList<String>();
+		ResultSet select = QueryExecutionFactory.create(QueryFactory.create(c2), oM).execSelect();
+		//ResultSetFormatter.out(System.out, select, QueryFactory.create(c2));
+		for(;select.hasNext();) {	
+	    	QuerySolution aux = null;   	
+	    	aux = select.next();
+	    	var.add(aux); 
+	    }
+		for(int i = 0; i < var.size(); i++) {
+			String auxCl = oM.getIndividual(var.get(i).get("s").toString()).getOntClass(true).getURI();
+			if(!clases.contains(auxCl)) {
+				clases.add(auxCl);
+				Individual auxIn = oM.getIndividual(auxCl + "Risk_Risk");
+				//System.out.println(risk.get(auxCl));
+				auxIn.addProperty(risVal, oM.createTypedLiteral(Float.parseFloat(impa[Integer.parseInt(risk.get(auxCl))])*Float.parseFloat(prob[Integer.parseInt(risk.get(auxCl))])));
+				isGenBy(auxCl + "Risk_Risk", auxCl, oM); 
+			}
+		}
+	}
+	
+	public static void genVul(Individual asset, String prob [], String impa [], String uri, String uri2, OntModel oM) {
+		String vName = "CVE-2019-15126";
+		OntClass clVul = oM.getOntClass(uri + "Vulnerability");
+	    Individual vul = oM.createIndividual(uri + vName, clVul);
+	    OntProperty hasVul = oM.getOntProperty(uri2 + "has_vulnerability");
+	    asset.addProperty(hasVul, vul);
+        
+	    OntClass clVulTh = oM.getOntClass(uri + "NetworkOutage");
+	    Individual vulTh = oM.createIndividual(uri + "Threat_NO_1", clVulTh);
+	    OntProperty isExp = oM.getOntProperty(uri2 + "isExposedTo");
+	    genPaI(prob[3], impa[3], clVulTh.getURI(), oM);
+	    instOf(clVulTh.getURI(), "Threat", oM);
+	    asset.addProperty(isExp, vulTh);
+	}
+	
+	public static void genPaI(String p, String i, String c, OntModel oM) {
+		String c2 = "PREFIX Ontologia_TFG: <http://www.semanticweb.org/tfg/Ontologia_TFG#>\n"
+				+ "PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>\n" + "\n" +
+	            "CONSTRUCT\n" + "{ ?s Ontologia_TFG:probability \"" + p + "\"^^xsd:float ; " +
+	            "  Ontologia_TFG:impact \"" + i + "\"^^xsd:float " +
+	            "   }\n" +
+	            "WHERE\n" +
+	            "  { ?s a <" + c + "> .\n" +
+	            "  }\n";
+		
+		Model construct = QueryExecutionFactory.create(QueryFactory.create(c2), oM).execConstruct();
+	    oM.add(construct);
+	}
+	
+	public static void instOf(String c, String g, OntModel oM) {
+		String c2 = "PREFIX Ontologia_TFG: <http://www.semanticweb.org/tfg/Ontologia_TFG#>\n"
+				+ "PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>\n" + "\n" +
+	            "CONSTRUCT\n" + "{ ?s a Ontologia_TFG:" + g + " . " +
+	            "   }\n" +
+	            "WHERE\n" +
+	            "  { ?s a <" + c + "> .\n" +
+	            "  }\n";
+		
+		Model construct = QueryExecutionFactory.create(QueryFactory.create(c2), oM).execConstruct();
+	    oM.add(construct);
+	}
+	
+	public static void isGenBy(String i, String cl, OntModel oM) {
+		String c2 = "PREFIX Ontologia_TFG: <http://www.semanticweb.org/tfg/Ontologia_TFG#>\n"
+				+ "PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>\n" + 
+				"PREFIX Ontologia2: <http://www.co-ode.org/ontologies/ont.owl#>" + "\n" +
+	            "CONSTRUCT\n" + "{ <" + i + "> Ontologia2:isGeneratedBy ?o . " +
+	            "   }\n" +
+	            "WHERE\n" +
+	            "  { ?o a <" + cl + "> .\n" +	            
+	            "  }\n";
+		
+		Model construct = QueryExecutionFactory.create(QueryFactory.create(c2), oM).execConstruct();
+	    oM.add(construct);
+	}
+	
+	public static void totalRisk(OntModel oM) {
+		String c2 = "PREFIX Ontologia_TFG: <http://www.semanticweb.org/tfg/Ontologia_TFG#>\n"
+				+ "PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>\n" + "\n" +
+				 "SELECT ?s ?o \n" +
+		            "WHERE\n" +
+		            "  { ?s a Ontologia_TFG:Risk ." +
+		            "?s Ontologia_TFG:risk_value ?o .\n" +
+		            "  }\n";
+		List<QuerySolution> var = new ArrayList<QuerySolution>();
+		ResultSet select = QueryExecutionFactory.create(QueryFactory.create(c2), oM).execSelect();
+		for(;select.hasNext();) {	
+	    	QuerySolution aux = null;   	
+	    	aux = select.next();
+	    	var.add(aux); 
+	    }
+		float num = 0;
+		for(int i = 0; i < var.size(); i++) {
+			String risVal = var.get(i).get("o").toString().replace("^^http://www.w3.org/2001/XMLSchema#float", "");
+			num = num + Float.parseFloat(risVal);
+		}
+		num = num/var.size();
+	    System.out.println("TotalRisk: " + num);
+		OntProperty rValue = oM.getOntProperty("http://www.semanticweb.org/tfg/Ontologia_TFG#risk_value");
+		Individual totalRiskI = oM.getIndividual("http://www.semanticweb.org/tfg/Ontologia_TFG#SystemTotalRisk"); 
+		totalRiskI.addProperty(rValue, oM.createTypedLiteral(num)); 		
+	}
+	
+public static void main (String args[]) throws FileNotFoundException, ParseException {
+	if(true) {
+		Model n = RDFDataMgr.loadModel("C:\\Users\\gonca\\Desktop\\Jaime Castro\\Cosas TFG\\TFG_base.owl");
+		OntModel ontModel = JenaUtil.createOntologyModel(OntModelSpec.OWL_MEM,n); //se carga el archivo en un ontModel
+		
+		SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+		
+		String uri = "http://www.semanticweb.org/tfg/Ontologia_TFG#";
+		String uri2 = "http://www.co-ode.org/ontologies/ont.owl#";
+		String aName = "Anomaly_";
+		String tName = "Threat_";
+	    int noIndividuos = 3;
+	    String prob [] = {"3.0", "7.0", "5.0", "4.0"};
+	    String impa [] = {"8.0", "5.0", "6.0", "7.0"};
+	    String classN [] = {"FW_", "BT_", "WF_"};
+	    Individual router = ontModel.getIndividual(uri + "RRouter");
+	    /*
+	    String fechaHoy = dateFormat.format(new Date());
+	    OntClass clAnom1 = ontModel.getOntClass(uri + "Firewall_Anomaly");
+	    OntClass clAnom2 = ontModel.getOntClass(uri + "Bluetooth_Sensor_Anomaly");
+	    OntClass clAnom3 = ontModel.getOntClass(uri + "WiFi_Sensor_Anomaly");
+	    */
+	    /*
+	    OntClass clVul = ontModel.getOntClass(uri + "Vulnerability");
+	    Individual vul = ontModel.createIndividual(uri + "CVE-2019-15126", clVul);
+	    Individual router = ontModel.getIndividual(uri + "RRouter");
+	    OntProperty hasVul = ontModel.getOntProperty(uri2 + "has_vulnerability");
+	    router.addProperty(hasVul, vul);
+	    */
+	    /*
+	    OntProperty date = ontModel.getOntProperty(uri + "date");
+	    OntClass anCl [] = {clAnom1, clAnom2, clAnom3};
+	   
+	    for(int i = 0; i < anCl.length; i++) {
+	    	OntClass auxCl = anCl[i];
+	    	for(int j = 0; j < noIndividuos; j++) {
+	    		Individual an = ontModel.createIndividual(uri + aName + classN[i] + j, auxCl);
+	    		an.addProperty(date, ontModel.createTypedLiteral(fechaHoy));
+	    	}
+    		genPaI(prob[i], impa[i], auxCl.getURI(), ontModel);
+    		instOf(auxCl.getURI(), "Detected_Anomaly", ontModel);
+	    }
+	    */
+	    genAn(classN, noIndividuos, uri, ontModel);
+	 
+	    //Generación de amenazas
+	    
+	    OntClass clTh1 = ontModel.getOntClass(uri + "DeliberatedUnauthorizedAccess");
+	    OntClass clTh2 = ontModel.getOntClass(uri + "DenialOfService");
+	    OntClass clTh3 = ontModel.getOntClass(uri + "ConfigurationError");
+	    //OntProperty generate = ontModel.getOntProperty(uri2 + "isGeneratedBy");
+	    OntClass thCl [] = {clTh1, clTh2, clTh3};
+	    
+	    OntClass clVulTh = ontModel.getOntClass(uri + "NetworkOutage");
+	    /*
+	    Individual vulTh = ontModel.createIndividual(uri + "Threat_NO_1", clVulTh);
+	    OntProperty isExp = ontModel.getOntProperty(uri2 + "isExposedTo");
+	    genPaI(prob[3], impa[3], clVulTh.getURI(), ontModel);
+	    instOf(clVulTh.getURI(), "Threat", ontModel);
+	    router.addProperty(isExp, vulTh);
+	    */
+	    /*
+	    for(int i = 0; i < thCl.length; i++) {
+	    	OntClass auxCl = thCl[i];
+	    	for(int j = 0; j < noIndividuos; j++) {
+	    		Individual an = ontModel.createIndividual(uri + tName + classN[i] + j, auxCl);
+	    		an.addProperty(generate, ontModel.getIndividual(uri + aName + classN[i] + j));
+	    	}
+    		genPaI(prob[i], impa[i], auxCl.getURI(), ontModel);
+    		instOf(auxCl.getURI(), "Threat", ontModel);
+	    }
+	    */
+	    genTh(prob, impa, classN, noIndividuos, uri, uri2, ontModel);
+	    genVul(router, prob, impa, uri, uri2, ontModel);
+	    /*
+	    Individual iRs1 = ontModel.getIndividual(uri + "DeliberatedUnauthorizedAccessRisk_Risk");
+	    Individual iRs2 = ontModel.getIndividual(uri + "DenialOfServiceRisk_Risk");
+	    Individual iRs3 = ontModel.getIndividual(uri + "ConfigurationErrorRisk_Risk");
+	    OntProperty risVal = ontModel.getOntProperty(uri + "risk_value");
+	    Individual rsIn [] = {iRs1, iRs2, iRs3};    
+	    
+	    for(int i = 0; i < rsIn.length; i++) {
+	    	Individual auxIn = rsIn[i];
+	    	OntClass auxCl = thCl[i];
+	    	//auxIn.addProperty(risVal, ontModel.createTypedLiteral(Float.parseFloat(impa[i])*Float.parseFloat(prob[i])));
+    		//isGenBy(auxIn.getURI(), auxCl.getURI(), ontModel);
+	    }
+	    */
+	    HashMap<String, String> risk = new HashMap<String, String>();
+	    risk.put(thCl[0].getURI(), "0");
+	    risk.put(thCl[1].getURI(), "1");
+	    risk.put(thCl[2].getURI(), "2");
+	    risk.put(clVulTh.getURI(), "3");
+	    
+	    genRs(ontModel, uri, prob, impa, risk);
+	    totalRisk(ontModel);
+	   
+	    /*
+	    OntClass clThre = ontModel.getOntClass("http://www.semanticweb.org/upm/ontologies/2019/11/cyberthreat_DRM#DeviceTheft");
+	    OntProperty generate = ontModel.getOntProperty("http://www.semanticweb.org/paulagarcia/ontologies/2020/2/cibersituational-ontology#isGeneratedBy");
+	    Individual risk = ontModel.getIndividual("http://www.semanticweb.org/paulagarcia/ontologies/2020/2/cibersituational-ontology#R1_Prueba");
+	    
+	    for(int i = 0; i < noIndividuos; i++) {
+	    	Individual an = ontModel.createIndividual("http://www.semanticweb.org/paulagarcia/ontologies/2021/4/cyberthreat_ONA#"+aName+i, clAnom);
+	    	Individual th = ontModel.createIndividual("http://www.semanticweb.org/upm/ontologies/2021/4/cyberthreat_DRM#"+tName+i, clThre );
+	    	th.addProperty(generate, an);
+		    risk.addProperty(generate, th);
+	    }
+	    */
+	    
+	    System.out.println("Funciono");
+		
+	    try {
+	    	FileOutputStream f = new FileOutputStream("C:\\Users\\gonca\\Desktop\\Jaime Castro\\Cosas TFG\\TFG_base2.owl");
+	    	ontModel.write(f);
+	    	} catch (Error e) {
+	    	}
+		
+	} else {
+		Constructs cts = new Constructs();
+		Model n = RDFDataMgr.loadModel("C:\\Users\\gonca\\Desktop\\Jaime Castro\\Cosas TFG\\PLICA_TFG_v2.owl");
+		OntModel ontModel = JenaUtil.createOntologyModel(OntModelSpec.OWL_MEM,n);
+		Query query = QueryFactory.create(cts.c3);
+		QueryExecution qex = QueryExecutionFactory.create(query, ontModel);
+		Model construct = qex.execConstruct();
+		construct.write(System.out);
+	}
+}
+
+}
